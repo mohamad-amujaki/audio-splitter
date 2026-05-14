@@ -1,40 +1,56 @@
 from __future__ import annotations
 
-import base64
-import json
 from pathlib import Path
 from typing import Any
 
-import streamlit.components.v1 as components
+import streamlit as st
 
-_COMPONENT_PATH = Path(__file__).resolve().parent / "browser_folder_frontend"
-_browser_folder_component = components.declare_component(
+from models import BrowserFolderResult
+from persistence import encode_files_json
+
+_FRONTEND_DIR = Path(__file__).resolve().parent / "browser_folder_frontend"
+_COMPONENT_HTML = """
+<div>
+  <button id="pick-folder" type="button">Pilih folder lokal…</button>
+  <p id="folder-status">Belum ada folder dipilih.</p>
+  <p id="save-status"></p>
+</div>
+"""
+_COMPONENT_JS = (_FRONTEND_DIR / "folder-component-v2.js").read_text(encoding="utf-8")
+
+_BROWSER_FOLDER_COMPONENT = st.components.v2.component(
     "browser_folder_manager",
-    path=str(_COMPONENT_PATH),
+    html=_COMPONENT_HTML,
+    js=_COMPONENT_JS,
+    isolate_styles=False,
 )
+
+
+def _noop_callback() -> None:
+    return None
 
 
 def render_browser_folder_manager(
     files_to_save: list[dict[str, str]] | None = None,
     *,
     key: str = "browser_folder_manager",
-) -> dict[str, Any] | None:
-    files_json = json.dumps(files_to_save or [])
-    result = _browser_folder_component(files_json=files_json, key=key)
-    if not isinstance(result, dict):
-        return None
-    return result
+) -> BrowserFolderResult | None:
+    """Render komponen folder browser CCv2 dan kembalikan status folder atau hasil simpan."""
+    result = _BROWSER_FOLDER_COMPONENT(
+        key=key,
+        data={"files_json": encode_files_json(files_to_save)},
+        on_name_change=_noop_callback,
+        on_selected_change=_noop_callback,
+        on_saved_change=_noop_callback,
+        on_error_change=_noop_callback,
+    )
+    return BrowserFolderResult.from_component_value(result)
 
 
-def build_browser_files_payload(output_paths: list[Path], output_root: Path) -> list[dict[str, str]]:
-    resolved_root = output_root.expanduser().resolve()
-    files_payload: list[dict[str, str]] = []
-    for output_path in output_paths:
-        resolved_output = output_path.expanduser().resolve()
-        files_payload.append(
-            {
-                "relative_path": resolved_output.relative_to(resolved_root).as_posix(),
-                "data": base64.b64encode(resolved_output.read_bytes()).decode("ascii"),
-            }
-        )
-    return files_payload
+def component_definition() -> dict[str, Any]:
+    """Metadata ringkas untuk pengujian registrasi komponen."""
+    return {
+        "name": "browser_folder_manager",
+        "frontend_dir": str(_FRONTEND_DIR),
+        "uses_v2": True,
+    }

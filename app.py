@@ -1,109 +1,62 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 import streamlit as st
 
-from browser_folder import build_browser_files_payload, render_browser_folder_manager
-from folder_picker import FolderPickerError, folder_picker_available, pick_output_directory_for_web
-from splitter import (
-    OUTPUT_FORMAT_MP3,
-    OUTPUT_FORMAT_ORIGINAL,
-    SplitterError,
-    ffmpeg_available,
-    split_audio,
-    supported_upload_types,
+from browser_folder import render_browser_folder_manager
+from folder_picker import FolderPickerError, pick_output_directory_for_web
+from messages import (
+    browser_folder_hint,
+    browser_folder_name_hint,
+    ffmpeg_missing_message,
+    info_message_mp3_format,
+    info_message_original_format,
+    no_folder_selected_caption,
+    processing_spinner_label,
+    upload_required_message,
 )
-
-UPLOAD_DIR = Path(".work/uploads")
-TEMP_OUTPUT_DIR = Path(".work/output")
-SEGMENT_OPTIONS = (10, 20, 30)
-OUTPUT_FORMAT_OPTIONS = (
-    (OUTPUT_FORMAT_ORIGINAL, "Pertahankan format asal"),
-    (OUTPUT_FORMAT_MP3, "Konversi ke .mp3"),
+from output_destination import create_web_output_destination, uses_native_folder_picker
+from splitter import OUTPUT_FORMAT_MP3, SplitterError, ffmpeg_available
+from ui_options import (
+    OUTPUT_FORMAT_LABELS,
+    SEGMENT_OPTIONS,
+    SUPPORTED_AUDIO_LABEL,
+    SUPPORTED_AUDIO_TYPES,
+    segment_label,
 )
-SUPPORTED_AUDIO_TYPES = supported_upload_types()
-SUPPORTED_AUDIO_LABEL = ", ".join(f".{extension}" for extension in SUPPORTED_AUDIO_TYPES)
-
-
-def init_session_state() -> None:
-    if "output_dir" not in st.session_state:
-        st.session_state.output_dir = ""
-    if "browser_output_folder" not in st.session_state:
-        st.session_state.browser_output_folder = ""
-    if "pending_browser_files" not in st.session_state:
-        st.session_state.pending_browser_files = []
-
-
-def uses_native_folder_picker() -> bool:
-    return folder_picker_available()
-
-
-def resolve_output_dir() -> Path:
-    output_dir = st.session_state.output_dir.strip()
-    if output_dir:
-        return Path(output_dir)
-    raise SplitterError("Pilih folder output di komputer Anda terlebih dahulu.")
-
-
-def save_uploaded_file(uploaded_file) -> Path:
-    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-    destination = UPLOAD_DIR / uploaded_file.name
-    destination.write_bytes(uploaded_file.getbuffer())
-    return destination
-
-
-def sync_browser_folder_state(component_result: dict | None) -> None:
-    if not component_result:
-        return
-
-    folder_name = component_result.get("name")
-    if component_result.get("selected") and folder_name:
-        st.session_state.browser_output_folder = folder_name
-
-
-def handle_browser_save_result(component_result: dict | None) -> None:
-    if not component_result:
-        return
-
-    if component_result.get("error"):
-        st.error(str(component_result["error"]))
-        return
-
-    saved_count = int(component_result.get("saved") or 0)
-    if saved_count <= 0:
-        return
-
-    folder_name = st.session_state.browser_output_folder
-    st.session_state.pending_browser_files = []
-    if folder_name:
-        st.success(
-            f"Selesai. {saved_count} file disimpan ke folder lokal `{folder_name}`."
-        )
-    else:
-        st.success(
-            f"Selesai. {saved_count} file disimpan ke folder lokal yang dipilih."
-        )
+from web_state import WebSessionState, save_uploaded_file
+from web_workflow import (
+    complete_split,
+    handle_browser_save_result,
+    render_split_success_message,
+    run_split_job,
+)
+from work_paths import cleanup_work_dirs
 
 
 def render_browser_folder_section() -> None:
+    """Render komponen folder browser dan sinkronkan status penyimpanan."""
     component_result = render_browser_folder_manager(
-        st.session_state.pending_browser_files,
+        WebSessionState.get_pending_browser_files(),
         key="browser_folder_manager",
     )
-    sync_browser_folder_state(component_result)
-    handle_browser_save_result(component_result)
+    WebSessionState.sync_browser_folder_result(component_result)
+    if handle_browser_save_result(component_result):
+        st.rerun()
 
-    if st.session_state.browser_output_folder:
-        st.caption(f"Folder lokal terpilih: `{st.session_state.browser_output_folder}`")
-        st.caption("Browser hanya menampilkan nama folder, bukan path lengkap.")
+    if WebSessionState.get_browser_output_folder():
+        st.caption(f"Folder lokal terpilih: `{WebSessionState.get_browser_output_folder()}`")
+        st.caption(browser_folder_name_hint())
     else:
-        st.caption("Belum ada folder dipilih.")
+        st.caption(no_folder_selected_caption())
 
 
 def main() -> None:
+    """Bangun halaman Streamlit untuk upload, pemilihan folder, dan pemotongan audio."""
     st.set_page_config(page_title="Pemotong Audio", page_icon="🎧", layout="centered")
-    init_session_state()
+    WebSessionState.init()
+    cleanup_work_dirs()
+
+    native_folder_picker = uses_native_folder_picker()
 
     st.title("Pemotong Audio")
     st.caption(
@@ -111,32 +64,29 @@ def main() -> None:
     )
 
     if not ffmpeg_available():
-        st.error(
-            "ffmpeg tidak ditemukan di server. "
-            "Untuk Streamlit Community Cloud, pastikan file packages.txt berisi ffmpeg "
-            "lalu deploy ulang aplikasi."
-        )
+        st.error(ffmpeg_missing_message())
         st.stop()
 
     uploaded_file = st.file_uploader(
         f"Unggah file audio ({SUPPORTED_AUDIO_LABEL})",
         type=list(SUPPORTED_AUDIO_TYPES),
+        key=f"audio_upload_{WebSessionState.get_upload_widget_key()}",
     )
     segment_minutes = st.radio(
         "Durasi setiap potongan",
         options=SEGMENT_OPTIONS,
-        format_func=lambda minutes: f"{minutes} menit",
+        format_func=segment_label,
         horizontal=True,
     )
     output_format = st.radio(
         "Format hasil",
-        options=[value for value, _ in OUTPUT_FORMAT_OPTIONS],
-        format_func=lambda value: dict(OUTPUT_FORMAT_OPTIONS)[value],
+        options=list(OUTPUT_FORMAT_LABELS),
+        format_func=OUTPUT_FORMAT_LABELS.get,
         horizontal=True,
     )
 
     st.subheader("Folder output")
-    if uses_native_folder_picker():
+    if native_folder_picker:
         if st.button("Pilih folder lokal…", use_container_width=True):
             try:
                 selected_directory = pick_output_directory_for_web()
@@ -144,68 +94,50 @@ def main() -> None:
                 st.error(str(exc))
             else:
                 if selected_directory:
-                    st.session_state.output_dir = selected_directory
+                    WebSessionState.set_output_dir(selected_directory)
 
-        if st.session_state.output_dir:
-            st.caption(f"Folder terpilih: `{st.session_state.output_dir}`")
+        if WebSessionState.get_output_dir():
+            st.caption(f"Folder terpilih: `{WebSessionState.get_output_dir()}`")
         else:
-            st.caption("Belum ada folder dipilih.")
+            st.caption(no_folder_selected_caption())
     else:
-        st.caption(
-            "Gunakan tombol di bawah untuk memilih folder lokal di komputer Anda. "
-            "Fitur ini membutuhkan browser berbasis Chromium."
-        )
+        st.caption(browser_folder_hint())
         render_browser_folder_section()
 
-    info_message = (
-        "Hasil disimpan di subfolder bernama file di dalam folder output yang dipilih. "
-        "Format asal memakai mode `-c copy` tanpa re-encode; titik potong bisa sedikit "
-        "menyimpang dari durasi yang dipilih."
+    st.info(
+        info_message_mp3_format()
+        if output_format == OUTPUT_FORMAT_MP3
+        else info_message_original_format()
     )
-    if output_format == OUTPUT_FORMAT_MP3:
-        info_message = (
-            "Hasil disimpan di subfolder bernama file di dalam folder output yang dipilih. "
-            "Konversi ke .mp3 memakai re-encode dan bisa lebih lama daripada format asal."
-        )
-    st.info(info_message)
 
     if st.button("Potong audio", type="primary", use_container_width=True):
         if uploaded_file is None:
-            st.error("Unggah file audio terlebih dahulu.")
+            st.error(upload_required_message())
             st.stop()
 
-        if uses_native_folder_picker():
-            if not st.session_state.output_dir.strip():
-                st.error("Pilih folder output di komputer Anda terlebih dahulu.")
-                st.stop()
-        elif not st.session_state.browser_output_folder:
-            st.error("Pilih folder output lokal terlebih dahulu.")
-            st.stop()
+        destination = create_web_output_destination(
+            native_picker_available=native_folder_picker,
+            native_output_dir=WebSessionState.get_output_dir(),
+            browser_output_folder=WebSessionState.get_browser_output_folder(),
+        )
 
         try:
             input_path = save_uploaded_file(uploaded_file)
-            output_dir = resolve_output_dir() if uses_native_folder_picker() else TEMP_OUTPUT_DIR
-
-            with st.spinner("Memproses audio…"):
-                output_paths = split_audio(
+            with st.spinner(processing_spinner_label()):
+                result = run_split_job(
                     input_path=input_path,
-                    output_dir=output_dir,
+                    destination=destination,
                     segment_minutes=segment_minutes,
                     output_format=output_format,
+                    source_name=uploaded_file.name,
                 )
         except SplitterError as exc:
             st.error(str(exc))
         else:
-            if uses_native_folder_picker():
-                st.success(
-                    f"Selesai. {len(output_paths)} file disimpan di folder lokal yang dipilih."
-                )
-            else:
-                st.session_state.pending_browser_files = build_browser_files_payload(
-                    output_paths,
-                    TEMP_OUTPUT_DIR,
-                )
+            if complete_split(result=result, destination=destination):
                 st.rerun()
+
+    render_split_success_message()
 
 
 if __name__ == "__main__":

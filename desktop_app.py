@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import threading
+from pathlib import Path
 
 try:
     import customtkinter as ctk
@@ -12,25 +13,16 @@ except (ImportError, ModuleNotFoundError) as exc:
         "misalnya: brew install python-tk@3.14"
     ) from exc
 
+from desktop_controller import DesktopSplitRequest, run_desktop_split
 from folder_picker import FolderPickerError, pick_output_directory
-from splitter import (
-    ALLOWED_SEGMENT_MINUTES,
-    OUTPUT_FORMAT_MP3,
-    OUTPUT_FORMAT_ORIGINAL,
-    SplitterError,
-    ffmpeg_available,
-    split_audio,
-    supported_audio_filetypes,
-)
-
-SEGMENT_OPTIONS = tuple(sorted(ALLOWED_SEGMENT_MINUTES))
-OUTPUT_FORMAT_OPTIONS = (
-    (OUTPUT_FORMAT_ORIGINAL, "Pertahankan format asal"),
-    (OUTPUT_FORMAT_MP3, "Konversi ke .mp3"),
-)
+from messages import desktop_ffmpeg_missing_message
+from splitter import OUTPUT_FORMAT_ORIGINAL, SplitterError, ffmpeg_available, supported_audio_filetypes
+from ui_options import OUTPUT_FORMAT_OPTIONS, SEGMENT_OPTIONS
 
 
 class AudioSplitterApp(ctk.CTk):
+    """Aplikasi desktop untuk memilih file, folder output, dan memotong audio secara lokal."""
+
     def __init__(self) -> None:
         super().__init__()
 
@@ -171,10 +163,7 @@ class AudioSplitterApp(ctk.CTk):
         if ffmpeg_available():
             return
 
-        self._set_status(
-            "ffmpeg tidak ditemukan di PATH. Instal ffmpeg terlebih dahulu.",
-            is_error=True,
-        )
+        self._set_status(desktop_ffmpeg_missing_message(), is_error=True)
         self._set_controls_enabled(False)
 
     def _set_controls_enabled(self, enabled: bool) -> None:
@@ -227,23 +216,20 @@ class AudioSplitterApp(ctk.CTk):
         self._set_controls_enabled(False)
         self._set_status("Memproses audio…")
 
-        input_path = self.input_path
-        output_dir = self.output_dir
-        segment_minutes = self.segment_minutes.get()
-        output_format = self.output_format.get()
+        request = DesktopSplitRequest(
+            input_path=Path(self.input_path),
+            output_dir=Path(self.output_dir),
+            segment_minutes=self.segment_minutes.get(),
+            output_format=self.output_format.get(),
+            source_name=Path(self.input_path).name,
+        )
 
         def worker() -> None:
             try:
-                output_paths = split_audio(
-                    input_path=input_path,
-                    output_dir=output_dir,
-                    segment_minutes=segment_minutes,
-                    output_format=output_format,
-                )
+                message = run_desktop_split(request)
             except SplitterError as exc:
                 self.after(0, lambda: self._finish_processing_error(str(exc)))
             else:
-                message = f"Selesai. {len(output_paths)} file disimpan di folder output."
                 self.after(0, lambda: self._finish_processing_success(message))
 
         threading.Thread(target=worker, daemon=True).start()

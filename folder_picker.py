@@ -3,35 +3,43 @@ from __future__ import annotations
 import shutil
 import subprocess
 import sys
+from functools import lru_cache
 
 
 class FolderPickerError(Exception):
-    """Raised when no folder picker can be opened on this system."""
+    """Dipakai saat dialog folder native tidak dapat dibuka."""
 
 
-def pick_output_directory(prompt: str = "Pilih folder output") -> str | None:
-    try:
-        import tkinter as tk
-        from tkinter import filedialog
-    except ImportError:
-        pass
-    else:
-        root = tk.Tk()
-        root.withdraw()
-        root.attributes("-topmost", True)
-        selected = filedialog.askdirectory(title=prompt, parent=root)
-        root.destroy()
-        return selected or None
+def pick_output_directory(
+    prompt: str = "Pilih folder output",
+    *,
+    prefer_tkinter: bool = True,
+) -> str | None:
+    """Buka dialog folder; desktop memakai Tkinter, web memakai dialog platform."""
+    if prefer_tkinter:
+        try:
+            import tkinter as tk
+            from tkinter import filedialog
+        except ImportError:
+            pass
+        else:
+            root = tk.Tk()
+            root.withdraw()
+            root.attributes("-topmost", True)
+            selected = filedialog.askdirectory(title=prompt, parent=root)
+            root.destroy()
+            return selected or None
 
     return _pick_output_directory_with_platform_handlers(prompt)
 
 
 def pick_output_directory_for_web(prompt: str = "Pilih folder output") -> str | None:
-    """Use platform dialogs via subprocess; safe from Streamlit worker threads."""
-    return _pick_output_directory_with_platform_handlers(prompt)
+    """Alias aman untuk Streamlit agar tidak memakai Tkinter di thread worker."""
+    return pick_output_directory(prompt, prefer_tkinter=False)
 
 
 def _pick_output_directory_with_platform_handlers(prompt: str) -> str | None:
+    """Delegasikan pemilihan folder ke handler khusus platform."""
     if sys.platform == "darwin":
         return _pick_with_macos(prompt)
     if sys.platform == "win32":
@@ -39,7 +47,9 @@ def _pick_output_directory_with_platform_handlers(prompt: str) -> str | None:
     return _pick_with_linux(prompt)
 
 
+@lru_cache(maxsize=1)
 def folder_picker_available() -> bool:
+    """Deteksi sekali per proses apakah dialog folder native tersedia di server."""
     if sys.platform == "darwin":
         return shutil.which("osascript") is not None
     if sys.platform == "win32":
@@ -48,6 +58,7 @@ def folder_picker_available() -> bool:
 
 
 def _pick_with_macos(prompt: str) -> str | None:
+    """Pilih folder di macOS melalui AppleScript."""
     if shutil.which("osascript") is None:
         raise FolderPickerError("Perintah osascript tidak ditemukan di macOS.")
 
@@ -66,6 +77,7 @@ def _pick_with_macos(prompt: str) -> str | None:
 
 
 def _pick_with_windows(prompt: str) -> str | None:
+    """Pilih folder di Windows melalui FolderBrowserDialog PowerShell."""
     escaped_prompt = prompt.replace("'", "''")
     command = (
         "Add-Type -AssemblyName System.Windows.Forms; "
@@ -88,6 +100,7 @@ def _pick_with_windows(prompt: str) -> str | None:
 
 
 def _pick_with_linux(prompt: str) -> str | None:
+    """Pilih folder di Linux melalui zenity atau kdialog."""
     if shutil.which("zenity") is not None:
         result = subprocess.run(
             ["zenity", "--file-selection", "--directory", f"--title={prompt}"],

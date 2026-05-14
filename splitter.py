@@ -3,10 +3,14 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
+# Durasi potongan yang diizinkan di UI (menit).
 ALLOWED_SEGMENT_MINUTES = frozenset({10, 20, 30})
+
+# Ekstensi audio yang diterima untuk upload dan pemrosesan.
 ALLOWED_AUDIO_EXTENSIONS = frozenset(
     {
         ".m4a",
@@ -22,16 +26,20 @@ ALLOWED_AUDIO_EXTENSIONS = frozenset(
         ".aif",
     }
 )
+
+# Opsi format output yang diekspos ke UI.
 OUTPUT_FORMAT_ORIGINAL = "original"
 OUTPUT_FORMAT_MP3 = "mp3"
 OutputFormat = Literal["original", "mp3"]
 
 
 class SplitterError(Exception):
-    """Raised when audio splitting cannot proceed."""
+    """Dipakai saat validasi input atau proses ffmpeg gagal."""
 
 
+@lru_cache(maxsize=1)
 def resolve_ffmpeg() -> str | None:
+    """Cari biner ffmpeg sekali per proses agar pemanggilan berulang lebih ringan."""
     for environment_key in ("FFMPEG_BINARY", "FFMPEG_PATH"):
         configured = os.environ.get(environment_key)
         if configured:
@@ -55,10 +63,12 @@ def resolve_ffmpeg() -> str | None:
 
 
 def ffmpeg_available() -> bool:
+    """Cek apakah ffmpeg tersedia sebelum UI menampilkan alur pemotongan."""
     return resolve_ffmpeg() is not None
 
 
 def ensure_ffmpeg() -> str:
+    """Pastikan ffmpeg ada; lempar SplitterError bila tidak ditemukan."""
     resolved = resolve_ffmpeg()
     if not resolved:
         raise SplitterError(
@@ -70,6 +80,7 @@ def ensure_ffmpeg() -> str:
 
 
 def ensure_output_dir(output_dir: Path) -> Path:
+    """Buat folder output bila perlu dan uji apakah folder dapat ditulis."""
     resolved = output_dir.expanduser().resolve()
     if resolved.exists():
         if not resolved.is_dir():
@@ -91,6 +102,7 @@ def ensure_output_dir(output_dir: Path) -> Path:
 
 
 def _segment_seconds(segment_minutes: int) -> int:
+    """Konversi durasi menit ke detik untuk argumen ffmpeg."""
     if segment_minutes not in ALLOWED_SEGMENT_MINUTES:
         allowed = ", ".join(str(value) for value in sorted(ALLOWED_SEGMENT_MINUTES))
         raise SplitterError(f"Durasi potong tidak didukung. Pilih salah satu: {allowed} menit.")
@@ -98,27 +110,32 @@ def _segment_seconds(segment_minutes: int) -> int:
 
 
 def supported_upload_types() -> tuple[str, ...]:
+    """Daftar ekstensi tanpa titik untuk widget upload Streamlit."""
     return tuple(sorted(extension.lstrip(".") for extension in ALLOWED_AUDIO_EXTENSIONS))
 
 
 def supported_audio_filetypes() -> list[tuple[str, str]]:
+    """Filter dialog file desktop berdasarkan ekstensi yang didukung."""
     extensions = " ".join(f"*{extension}" for extension in sorted(ALLOWED_AUDIO_EXTENSIONS))
     return [("Berkas audio didukung", extensions), ("Semua file", "*.*")]
 
 
 def _validate_output_format(output_format: str) -> OutputFormat:
+    """Pastikan format output hanya salah satu opsi yang didukung."""
     if output_format not in {OUTPUT_FORMAT_ORIGINAL, OUTPUT_FORMAT_MP3}:
         raise SplitterError("Format output tidak didukung. Pilih format asal atau .mp3.")
     return output_format
 
 
 def _output_extension(input_extension: str, output_format: OutputFormat) -> str:
+    """Tentukan ekstensi file hasil berdasarkan mode output."""
     if output_format == OUTPUT_FORMAT_MP3:
         return ".mp3"
     return input_extension
 
 
 def _codec_args(input_extension: str, output_format: OutputFormat) -> list[str]:
+    """Susun argumen codec ffmpeg untuk copy stream atau re-encode ke mp3."""
     if output_format == OUTPUT_FORMAT_ORIGINAL:
         return ["-c", "copy"]
     if input_extension == ".mp3":
@@ -127,6 +144,7 @@ def _codec_args(input_extension: str, output_format: OutputFormat) -> list[str]:
 
 
 def _validate_audio_extension(path: Path) -> str:
+    """Tolak file yang ekstensinya tidak ada dalam daftar audio didukung."""
     extension = path.suffix.lower()
     if extension not in ALLOWED_AUDIO_EXTENSIONS:
         allowed = ", ".join(sorted(ALLOWED_AUDIO_EXTENSIONS))
@@ -138,6 +156,7 @@ def _validate_audio_extension(path: Path) -> str:
 
 
 def _rename_segments_to_one_based(output_dir: Path, stem: str, extension: str) -> list[Path]:
+    """Ubah penamaan segmen ffmpeg dari indeks 0 ke 1 agar sesuai konvensi UI."""
     zero_based_paths = sorted(
         output_dir.glob(f"{stem}_*{extension}"),
         key=lambda path: int(path.stem.rsplit("_", maxsplit=1)[-1]),
@@ -164,6 +183,7 @@ def split_audio(
     segment_minutes: int,
     output_format: OutputFormat = OUTPUT_FORMAT_ORIGINAL,
 ) -> list[Path]:
+    """Potong satu file audio menjadi beberapa segmen dengan ffmpeg."""
     ffmpeg_executable = ensure_ffmpeg()
     validated_output_format = _validate_output_format(output_format)
 
@@ -222,4 +242,5 @@ def split_m4a(
     segment_minutes: int,
     output_format: OutputFormat = OUTPUT_FORMAT_ORIGINAL,
 ) -> list[Path]:
+    """Alias kompatibilitas untuk pemanggil lama yang masih menyebut split_m4a."""
     return split_audio(input_path, output_dir, segment_minutes, output_format)

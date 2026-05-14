@@ -62,18 +62,19 @@ streamlit run app.py
 4. Di browser:
    - Unggah file audio.
    - Pilih durasi potongan: 10, 20, atau 30 menit.
-   - Klik **Pilih folder…** untuk memilih folder output.
+   - Pilih format hasil (format asal atau `.mp3`).
+   - Pilih folder output lokal.
    - Klik **Potong audio**.
 5. Hasil disimpan di subfolder bernama file di dalam folder output yang dipilih. Contoh: folder output `Hasil` dan file `Podcast.m4a` menghasilkan `Hasil/Podcast/Podcast_1.m4a`, `Podcast_2.m4a`, dan seterusnya.
-6. Unduh tiap potongan lewat tombol unduh di halaman, atau buka langsung folder hasil di komputer Anda.
+6. Setelah berhasil, unggahan dikosongkan dan ringkasan hasil muncul di bawah tombol **Potong audio**.
 7. Untuk menghentikan server web, kembali ke terminal lalu tekan `Ctrl+C`.
 
 Catatan penting:
 
 - Jalankan `app.py`, bukan `splitter.py`.
 - Jika halaman kosong atau hitam, hentikan server lalu jalankan ulang `streamlit run app.py`.
-- Versi web memakai dialog folder sistem (bukan dialog di dalam browser). Jika dialog tidak terlihat, cek jendela lain dengan `Cmd+Tab`.
-- Jika dialog folder membuat Python berhenti mendadak, muat ulang halaman setelah memperbarui kode aplikasi.
+- Di komputer lokal, folder output dipilih lewat dialog sistem. Jika dialog tidak terlihat, cek jendela lain dengan `Cmd+Tab`.
+- Di deploy cloud, pilih folder lokal lewat browser berbasis Chromium; hasil diproses sementara di server lalu disimpan ke folder yang Anda pilih.
 
 ## Menjalankan versi desktop
 
@@ -90,7 +91,7 @@ python desktop_app.py
    - Klik **Pilih folder…** untuk memilih folder output.
    - Klik **Potong audio**.
 4. Hasil disimpan dengan pola folder yang sama seperti versi web: subfolder bernama file di dalam folder output yang dipilih.
-5. Daftar path hasil muncul di bagian bawah jendela aplikasi.
+5. Ringkasan hasil muncul di bawah tombol **Potong audio**.
 6. Tutup jendela aplikasi untuk menghentikan program.
 
 Jika muncul pesan bahwa Tkinter tidak tersedia, pasang dukungan Tkinter untuk versi Python Anda. Di macOS dengan Homebrew, contohnya:
@@ -111,6 +112,16 @@ Sesuaikan versi Python jika berbeda.
 Server cloud tidak memakai `ffmpeg` dari komputer lokal Anda. `ffmpeg` harus dipasang di lingkungan server lewat `packages.txt`.
 
 Di deploy cloud, dialog folder lokal tidak tersedia. Pilih folder lokal lewat browser berbasis Chromium; hasil diproses sementara di server lalu disimpan ke folder yang Anda pilih.
+
+## Pengujian
+
+Jalankan unit test dan uji integrasi ffmpeg:
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+Uji integrasi pemotongan audio dilewati otomatis bila `ffmpeg` tidak tersedia di lingkungan Anda.
 
 ## Privasi
 
