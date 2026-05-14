@@ -56,9 +56,8 @@ export default function (component) {
   const { parentElement, data, setStateValue } = component;
   const pickButton = parentElement.querySelector("#pick-folder");
   const folderStatus = parentElement.querySelector("#folder-status");
-  const saveStatus = parentElement.querySelector("#save-status");
 
-  if (!pickButton || !folderStatus || !saveStatus) {
+  if (!pickButton || !folderStatus) {
     return;
   }
 
@@ -67,10 +66,6 @@ export default function (component) {
 
   function setStatus(message) {
     folderStatus.textContent = message;
-  }
-
-  function setSaveStatus(message) {
-    saveStatus.textContent = message;
   }
 
   function publishState(payload) {
@@ -157,7 +152,6 @@ export default function (component) {
         await writable.close();
       }
 
-      setSaveStatus(`Berhasil menyimpan ${files.length} file.`);
       publishState({
         name: directoryHandle.name,
         selected: true,
@@ -200,7 +194,6 @@ export default function (component) {
         parentElement.__audioSplitterDirectoryHandle = directoryHandle;
         await storeDirectoryHandle(directoryHandle);
         setStatus(`Folder terpilih: ${directoryHandle.name}`);
-        setSaveStatus("");
         reportSelection(true);
       } catch (error) {
         setStatus("Folder tidak dipilih.");

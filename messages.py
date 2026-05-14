@@ -30,8 +30,8 @@ def browser_output_required_message() -> str:
 
 def browser_folder_hint() -> str:
     return (
-        "Gunakan tombol di bawah untuk memilih folder lokal di komputer Anda. "
-        "Fitur ini membutuhkan browser berbasis Chromium."
+        "Pilih folder output lokal di komputer Anda melalui tombol di bawah. "
+        "Fitur ini membutuhkan browser berbasis Chromium seperti Chrome atau Edge."
     )
 
 
@@ -50,15 +50,15 @@ def processing_spinner_label() -> str:
 def info_message_original_format() -> str:
     return (
         "Hasil disimpan di subfolder bernama file di dalam folder output yang dipilih. "
-        "Format asal memakai mode `-c copy` tanpa re-encode; titik potong bisa sedikit "
-        "menyimpang dari durasi yang dipilih."
+        "Format asal memakai mode salin stream tanpa re-encode, sehingga proses lebih cepat; "
+        "titik potong bisa sedikit menyimpang dari durasi yang dipilih."
     )
 
 
 def info_message_mp3_format() -> str:
     return (
         "Hasil disimpan di subfolder bernama file di dalam folder output yang dipilih. "
-        "Konversi ke .mp3 memakai re-encode dan bisa lebih lama daripada format asal."
+        "Konversi ke MP3 memakai re-encode dan bisa lebih lama daripada mempertahankan format asal."
     )
 
 

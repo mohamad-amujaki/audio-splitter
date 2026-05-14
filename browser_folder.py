@@ -10,10 +10,11 @@ from persistence import encode_files_json
 
 _FRONTEND_DIR = Path(__file__).resolve().parent / "browser_folder_frontend"
 _COMPONENT_HTML = """
-<div>
-  <button id="pick-folder" type="button">Pilih folder lokal…</button>
-  <p id="folder-status">Belum ada folder dipilih.</p>
-  <p id="save-status"></p>
+<div class="audio-folder-picker">
+  <button id="pick-folder" type="button" aria-describedby="folder-status">
+    Pilih folder lokal…
+  </button>
+  <p id="folder-status" role="status" aria-live="polite">Belum ada folder dipilih.</p>
 </div>
 """
 _COMPONENT_JS = (_FRONTEND_DIR / "folder-component-v2.js").read_text(encoding="utf-8")

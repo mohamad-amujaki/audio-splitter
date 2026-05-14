@@ -6,7 +6,6 @@ from browser_folder import render_browser_folder_manager
 from folder_picker import FolderPickerError, pick_output_directory_for_web
 from messages import (
     browser_folder_hint,
-    browser_folder_name_hint,
     ffmpeg_missing_message,
     info_message_mp3_format,
     info_message_original_format,
@@ -23,6 +22,7 @@ from ui_options import (
     SUPPORTED_AUDIO_TYPES,
     segment_label,
 )
+from web_seo import configure_streamlit_page, inject_responsive_styles, render_page_intro
 from web_state import WebSessionState, save_uploaded_file
 from web_workflow import (
     complete_split,
@@ -43,25 +43,16 @@ def render_browser_folder_section() -> None:
     if handle_browser_save_result(component_result):
         st.rerun()
 
-    if WebSessionState.get_browser_output_folder():
-        st.caption(f"Folder lokal terpilih: `{WebSessionState.get_browser_output_folder()}`")
-        st.caption(browser_folder_name_hint())
-    else:
-        st.caption(no_folder_selected_caption())
-
 
 def main() -> None:
     """Bangun halaman Streamlit untuk upload, pemilihan folder, dan pemotongan audio."""
-    st.set_page_config(page_title="Pemotong Audio", page_icon="🎧", layout="centered")
+    configure_streamlit_page()
     WebSessionState.init()
+    inject_responsive_styles()
     cleanup_work_dirs()
 
     native_folder_picker = uses_native_folder_picker()
-
-    st.title("Pemotong Audio")
-    st.caption(
-        "Hasil disimpan ke folder lokal di komputer Anda. Pilih folder output sebelum memotong audio."
-    )
+    render_page_intro()
 
     if not ffmpeg_available():
         st.error(ffmpeg_missing_message())
@@ -69,7 +60,7 @@ def main() -> None:
 
     uploaded_file = st.file_uploader(
         f"Unggah file audio ({SUPPORTED_AUDIO_LABEL})",
-        type=list(SUPPORTED_AUDIO_TYPES),
+        type=SUPPORTED_AUDIO_TYPES,
         key=f"audio_upload_{WebSessionState.get_upload_widget_key()}",
     )
     segment_minutes = st.radio(
