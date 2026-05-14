@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -24,37 +25,48 @@ ALLOWED_AUDIO_EXTENSIONS = frozenset(
 OUTPUT_FORMAT_ORIGINAL = "original"
 OUTPUT_FORMAT_MP3 = "mp3"
 OutputFormat = Literal["original", "mp3"]
-ALLOWED_AUDIO_EXTENSIONS = frozenset(
-    {
-        ".m4a",
-        ".mp3",
-        ".wav",
-        ".aac",
-        ".ogg",
-        ".flac",
-        ".opus",
-        ".wma",
-        ".m4b",
-        ".aiff",
-        ".aif",
-    }
-)
 
 
 class SplitterError(Exception):
     """Raised when audio splitting cannot proceed."""
 
 
+def resolve_ffmpeg() -> str | None:
+    for environment_key in ("FFMPEG_BINARY", "FFMPEG_PATH"):
+        configured = os.environ.get(environment_key)
+        if configured:
+            configured_path = Path(configured).expanduser()
+            if configured_path.is_file():
+                return str(configured_path)
+
+    located = shutil.which("ffmpeg")
+    if located:
+        return located
+
+    try:
+        import imageio_ffmpeg
+    except ImportError:
+        return None
+
+    bundled = imageio_ffmpeg.get_ffmpeg_exe()
+    if bundled and Path(bundled).is_file():
+        return bundled
+    return None
+
+
 def ffmpeg_available() -> bool:
-    return shutil.which("ffmpeg") is not None and shutil.which("ffprobe") is not None
+    return resolve_ffmpeg() is not None
 
 
-def ensure_ffmpeg() -> None:
-    if not ffmpeg_available():
+def ensure_ffmpeg() -> str:
+    resolved = resolve_ffmpeg()
+    if not resolved:
         raise SplitterError(
-            "ffmpeg atau ffprobe tidak ditemukan di PATH. "
-            "Instal ffmpeg terlebih dahulu (misalnya: brew install ffmpeg)."
+            "ffmpeg tidak ditemukan di server. "
+            "Untuk Streamlit Community Cloud, pastikan file packages.txt berisi ffmpeg "
+            "lalu deploy ulang aplikasi."
         )
+    return resolved
 
 
 def ensure_output_dir(output_dir: Path) -> Path:
@@ -152,7 +164,7 @@ def split_audio(
     segment_minutes: int,
     output_format: OutputFormat = OUTPUT_FORMAT_ORIGINAL,
 ) -> list[Path]:
-    ensure_ffmpeg()
+    ffmpeg_executable = ensure_ffmpeg()
     validated_output_format = _validate_output_format(output_format)
 
     resolved_input = input_path.expanduser().resolve()
@@ -175,7 +187,7 @@ def split_audio(
 
     segment_pattern = resolved_output / f"{stem}_%d{output_extension}"
     command = [
-        "ffmpeg",
+        ffmpeg_executable,
         "-hide_banner",
         "-loglevel",
         "error",

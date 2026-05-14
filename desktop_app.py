@@ -172,7 +172,7 @@ class AudioSplitterApp(ctk.CTk):
             return
 
         self._set_status(
-            "ffmpeg atau ffprobe tidak ditemukan di PATH. Instal ffmpeg terlebih dahulu.",
+            "ffmpeg tidak ditemukan di PATH. Instal ffmpeg terlebih dahulu.",
             is_error=True,
         )
         self._set_controls_enabled(False)

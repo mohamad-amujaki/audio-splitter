@@ -51,8 +51,9 @@ def main() -> None:
 
     if not ffmpeg_available():
         st.error(
-            "ffmpeg atau ffprobe tidak ditemukan di PATH. "
-            "Instal ffmpeg terlebih dahulu, lalu muat ulang halaman ini."
+            "ffmpeg tidak ditemukan di server. "
+            "Untuk Streamlit Community Cloud, pastikan file packages.txt berisi ffmpeg "
+            "lalu deploy ulang aplikasi."
         )
         st.stop()
 

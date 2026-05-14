@@ -5,14 +5,13 @@ Aplikasi lokal untuk memotong file audio (`.m4a`, `.mp3`, `.wav`, `.aac`, `.ogg`
 ## Yang perlu disiapkan
 
 1. Python 3.10 atau lebih baru.
-2. `ffmpeg` dan `ffprobe` sudah terpasang dan bisa dipanggil dari terminal.
+2. `ffmpeg` sudah terpasang dan bisa dipanggil dari terminal.
 3. Koneksi internet hanya dibutuhkan saat instalasi dependensi Python, bukan saat memotong audio.
 
 Cek `ffmpeg` di terminal:
 
 ```bash
 ffmpeg -version
-ffprobe -version
 ```
 
 Jika perintah di atas gagal, pasang `ffmpeg` terlebih dahulu. Di macOS:
@@ -101,6 +100,15 @@ brew install python-tk@3.14
 ```
 
 Sesuaikan versi Python jika berbeda.
+
+## Deploy ke Streamlit Community Cloud
+
+1. Pastikan file `packages.txt` ada di root repositori dan berisi baris `ffmpeg`.
+2. Pastikan `requirements.txt` ikut ter-commit.
+3. Deploy ulang aplikasi setelah perubahan dependensi dipush ke repositori.
+4. Di pengaturan deploy, pilih `app.py` sebagai entry point.
+
+Server cloud tidak memakai `ffmpeg` dari komputer lokal Anda. `ffmpeg` harus dipasang di lingkungan server lewat `packages.txt`.
 
 ## Privasi
 
