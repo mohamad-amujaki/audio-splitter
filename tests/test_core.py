@@ -26,7 +26,9 @@ from splitter import (
     supported_upload_types,
 )
 from ui_options import output_format_label
-from work_paths import WORK_ROOT, cleanup_work_dirs, ensure_work_dirs
+from models import SplitJobResult
+from splitter import OUTPUT_FORMAT_ORIGINAL
+from work_paths import cleanup_server_staging, cleanup_work_dirs, ensure_work_dirs
 
 
 class SplitterHelperTests(unittest.TestCase):
@@ -154,6 +156,35 @@ class RuntimeAvailabilityTests(unittest.TestCase):
 
 
 class WorkPathTests(unittest.TestCase):
+    def test_cleanup_server_staging_removes_upload_and_temp_outputs(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            work_root = Path(temp_dir)
+            upload_dir = work_root / "uploads"
+            output_dir = work_root / "output"
+            upload_dir.mkdir(parents=True)
+            output_dir.mkdir(parents=True)
+            input_path = upload_dir / "lagu.m4a"
+            input_path.write_bytes(b"input")
+            stem_dir = output_dir / "lagu"
+            stem_dir.mkdir()
+            output_file = stem_dir / "lagu_1.m4a"
+            output_file.write_bytes(b"out")
+            result = SplitJobResult.from_paths(
+                source_name="lagu.m4a",
+                segment_minutes=10,
+                output_format=OUTPUT_FORMAT_ORIGINAL,
+                output_paths=[output_file],
+            )
+
+            with patch("work_paths.UPLOAD_DIR", upload_dir), patch(
+                "work_paths.TEMP_OUTPUT_DIR", output_dir
+            ):
+                cleanup_server_staging(input_path=input_path, result=result)
+
+            self.assertFalse(input_path.exists())
+            self.assertFalse(output_file.exists())
+            self.assertFalse(stem_dir.exists())
+
     def test_cleanup_work_dirs_removes_old_files(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             work_root = Path(temp_dir)

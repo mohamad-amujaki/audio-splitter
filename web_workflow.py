@@ -10,11 +10,16 @@ from output_destination import OutputDestination
 from persistence import split_result_from_paths
 from splitter import OutputFormat, SplitterError, split_audio
 from web_state import WebSessionState
-from work_paths import cleanup_work_dirs
+from work_paths import cleanup_server_staging, cleanup_work_dirs
 
 
 def record_split_success(result: SplitJobResult, destination_label: str) -> None:
     """Simpan pesan sukses dan reset widget upload."""
+    active_input_path = WebSessionState.get_active_input_path()
+    if active_input_path is not None:
+        cleanup_server_staging(input_path=active_input_path, result=result)
+        WebSessionState.clear_active_input_path()
+
     WebSessionState.set_last_split_success(
         build_split_success_message(
             source_name=result.source_name,

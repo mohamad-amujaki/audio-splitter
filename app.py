@@ -115,6 +115,7 @@ def main() -> None:
 
         try:
             input_path = save_uploaded_file(uploaded_file)
+            WebSessionState.set_active_input_path(input_path)
             with st.spinner(processing_spinner_label()):
                 result = run_split_job(
                     input_path=input_path,

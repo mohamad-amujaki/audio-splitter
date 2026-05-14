@@ -22,6 +22,7 @@ class WebSessionState:
             "completed_split_info": None,
             "last_split_success": None,
             "split_phase": WebSplitPhase.IDLE.value,
+            "active_input_path": "",
         }
         for key, value in defaults.items():
             if key not in st.session_state:
@@ -91,6 +92,21 @@ class WebSessionState:
     @staticmethod
     def get_upload_widget_key() -> int:
         return int(st.session_state.upload_widget_key)
+
+    @staticmethod
+    def set_active_input_path(path: Path) -> None:
+        st.session_state.active_input_path = str(path)
+
+    @staticmethod
+    def get_active_input_path() -> Path | None:
+        stored_path = str(st.session_state.get("active_input_path", "")).strip()
+        if not stored_path:
+            return None
+        return Path(stored_path)
+
+    @staticmethod
+    def clear_active_input_path() -> None:
+        st.session_state.active_input_path = ""
 
     @staticmethod
     def sync_browser_folder_result(result: BrowserFolderResult | None) -> None:
