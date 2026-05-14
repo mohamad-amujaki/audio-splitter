@@ -29,6 +29,18 @@ SUPPORTED_AUDIO_LABEL = ", ".join(f".{extension}" for extension in SUPPORTED_AUD
 def init_session_state() -> None:
     if "output_dir" not in st.session_state:
         st.session_state.output_dir = ""
+    if "browser_output_folder" not in st.session_state:
+        st.session_state.browser_output_folder = ""
+
+
+def sync_browser_folder_selection() -> None:
+    selected_folder = st.query_params.get("selected_folder")
+    if not selected_folder:
+        return
+
+    st.session_state.browser_output_folder = selected_folder
+    if "selected_folder" in st.query_params:
+        del st.query_params["selected_folder"]
 
 
 def uses_native_folder_picker() -> bool:
@@ -52,6 +64,7 @@ def save_uploaded_file(uploaded_file) -> Path:
 def main() -> None:
     st.set_page_config(page_title="Pemotong Audio", page_icon="🎧", layout="centered")
     init_session_state()
+    sync_browser_folder_selection()
 
     st.title("Pemotong Audio")
     st.caption(
@@ -104,6 +117,11 @@ def main() -> None:
             "Fitur ini membutuhkan browser berbasis Chromium."
         )
         render_browser_folder_picker()
+        if st.session_state.browser_output_folder:
+            st.caption(f"Folder lokal terpilih: `{st.session_state.browser_output_folder}`")
+            st.caption("Browser hanya menampilkan nama folder, bukan path lengkap.")
+        else:
+            st.caption("Belum ada folder dipilih.")
 
     info_message = (
         "Hasil disimpan di subfolder bernama file di dalam folder output yang dipilih. "
@@ -145,9 +163,17 @@ def main() -> None:
                 )
             else:
                 render_browser_folder_save(output_paths, TEMP_OUTPUT_DIR)
-                st.success(
-                    f"Selesai. {len(output_paths)} file disimpan ke folder lokal yang dipilih."
-                )
+                folder_name = st.session_state.browser_output_folder
+                if folder_name:
+                    message = (
+                        f"Selesai. {len(output_paths)} file disimpan ke folder lokal "
+                        f"`{folder_name}`."
+                    )
+                else:
+                    message = (
+                        f"Selesai. {len(output_paths)} file disimpan ke folder lokal yang dipilih."
+                    )
+                st.success(message)
 
 
 if __name__ == "__main__":

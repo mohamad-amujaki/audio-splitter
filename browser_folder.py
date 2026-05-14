@@ -71,6 +71,15 @@ async function refreshStatus() {
   status.textContent = `Folder terpilih: ${handle.name}`;
 }
 
+function reportFolderNameToStreamlit(folderName) {
+  const parentUrl = new URL(window.parent.location.href);
+  if (parentUrl.searchParams.get("selected_folder") === folderName) {
+    return;
+  }
+  parentUrl.searchParams.set("selected_folder", folderName);
+  window.parent.location.assign(parentUrl.toString());
+}
+
 document.getElementById("pick-folder").addEventListener("click", async () => {
   const status = document.getElementById("folder-status");
   if (!window.showDirectoryPicker) {
@@ -82,6 +91,7 @@ document.getElementById("pick-folder").addEventListener("click", async () => {
     const handle = await window.showDirectoryPicker();
     await storeDirectoryHandle(handle);
     status.textContent = `Folder terpilih: ${handle.name}`;
+    reportFolderNameToStreamlit(handle.name);
   } catch (error) {
     status.textContent = "Folder tidak dipilih.";
   }
