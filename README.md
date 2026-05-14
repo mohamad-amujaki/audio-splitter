@@ -110,7 +110,7 @@ Sesuaikan versi Python jika berbeda.
 
 Server cloud tidak memakai `ffmpeg` dari komputer lokal Anda. `ffmpeg` harus dipasang di lingkungan server lewat `packages.txt`.
 
-Di deploy cloud, dialog folder lokal tidak tersedia. Isi path folder output di server, atau biarkan nilai baku `.work/output`.
+Di deploy cloud, dialog folder lokal tidak tersedia. Pilih folder lokal lewat browser berbasis Chromium; hasil diproses sementara di server lalu disimpan ke folder yang Anda pilih.
 
 ## Privasi
 

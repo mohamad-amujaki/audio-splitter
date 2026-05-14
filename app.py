@@ -4,11 +4,8 @@ from pathlib import Path
 
 import streamlit as st
 
-from folder_picker import (
-    FolderPickerError,
-    folder_picker_available,
-    pick_output_directory_for_web,
-)
+from browser_folder import render_browser_folder_picker, render_browser_folder_save
+from folder_picker import FolderPickerError, folder_picker_available, pick_output_directory_for_web
 from splitter import (
     OUTPUT_FORMAT_MP3,
     OUTPUT_FORMAT_ORIGINAL,
@@ -19,7 +16,7 @@ from splitter import (
 )
 
 UPLOAD_DIR = Path(".work/uploads")
-DEFAULT_CLOUD_OUTPUT_DIR = ".work/output"
+TEMP_OUTPUT_DIR = Path(".work/output")
 SEGMENT_OPTIONS = (10, 20, 30)
 OUTPUT_FORMAT_OPTIONS = (
     (OUTPUT_FORMAT_ORIGINAL, "Pertahankan format asal"),
@@ -31,22 +28,18 @@ SUPPORTED_AUDIO_LABEL = ", ".join(f".{extension}" for extension in SUPPORTED_AUD
 
 def init_session_state() -> None:
     if "output_dir" not in st.session_state:
-        st.session_state.output_dir = (
-            DEFAULT_CLOUD_OUTPUT_DIR if not folder_picker_available() else ""
-        )
+        st.session_state.output_dir = ""
 
 
-def uses_cloud_output_selection() -> bool:
-    return not folder_picker_available()
+def uses_native_folder_picker() -> bool:
+    return folder_picker_available()
 
 
 def resolve_output_dir() -> Path:
     output_dir = st.session_state.output_dir.strip()
     if output_dir:
         return Path(output_dir)
-    if uses_cloud_output_selection():
-        return Path(DEFAULT_CLOUD_OUTPUT_DIR)
-    raise SplitterError("Pilih folder output terlebih dahulu.")
+    raise SplitterError("Pilih folder output di komputer Anda terlebih dahulu.")
 
 
 def save_uploaded_file(uploaded_file) -> Path:
@@ -61,15 +54,9 @@ def main() -> None:
     init_session_state()
 
     st.title("Pemotong Audio")
-    if uses_cloud_output_selection():
-        st.caption(
-            "Aplikasi berjalan di server Streamlit. File diproses di server dan hasil "
-            "disimpan ke path folder output yang Anda isi."
-        )
-    else:
-        st.caption(
-            "File diproses sepenuhnya di komputer Anda. Tidak ada unggahan ke layanan eksternal."
-        )
+    st.caption(
+        "Hasil disimpan ke folder lokal di komputer Anda. Pilih folder output sebelum memotong audio."
+    )
 
     if not ffmpeg_available():
         st.error(
@@ -97,17 +84,8 @@ def main() -> None:
     )
 
     st.subheader("Folder output")
-    if uses_cloud_output_selection():
-        st.text_input(
-            "Path folder output di server",
-            key="output_dir",
-            placeholder=DEFAULT_CLOUD_OUTPUT_DIR,
-            help="Deploy cloud tidak mendukung dialog folder lokal. Isi path folder di server.",
-        )
-        if not st.session_state.output_dir.strip():
-            st.caption(f"Jika dikosongkan, hasil disimpan ke `{DEFAULT_CLOUD_OUTPUT_DIR}`.")
-    else:
-        if st.button("Pilih folder…", use_container_width=True):
+    if uses_native_folder_picker():
+        if st.button("Pilih folder lokal…", use_container_width=True):
             try:
                 selected_directory = pick_output_directory_for_web()
             except FolderPickerError as exc:
@@ -120,6 +98,12 @@ def main() -> None:
             st.caption(f"Folder terpilih: `{st.session_state.output_dir}`")
         else:
             st.caption("Belum ada folder dipilih.")
+    else:
+        st.caption(
+            "Gunakan tombol di bawah untuk memilih folder lokal di komputer Anda. "
+            "Fitur ini membutuhkan browser berbasis Chromium."
+        )
+        render_browser_folder_picker()
 
     info_message = (
         "Hasil disimpan di subfolder bernama file di dalam folder output yang dipilih. "
@@ -140,7 +124,11 @@ def main() -> None:
 
         try:
             input_path = save_uploaded_file(uploaded_file)
-            output_dir = resolve_output_dir()
+            if uses_native_folder_picker():
+                output_dir = resolve_output_dir()
+            else:
+                output_dir = TEMP_OUTPUT_DIR
+
             with st.spinner("Memproses audio…"):
                 output_paths = split_audio(
                     input_path=input_path,
@@ -151,9 +139,15 @@ def main() -> None:
         except SplitterError as exc:
             st.error(str(exc))
         else:
-            st.success(
-                f"Selesai. {len(output_paths)} file disimpan di folder output yang dipilih."
-            )
+            if uses_native_folder_picker():
+                st.success(
+                    f"Selesai. {len(output_paths)} file disimpan di folder lokal yang dipilih."
+                )
+            else:
+                render_browser_folder_save(output_paths, TEMP_OUTPUT_DIR)
+                st.success(
+                    f"Selesai. {len(output_paths)} file disimpan ke folder lokal yang dipilih."
+                )
 
 
 if __name__ == "__main__":
