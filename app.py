@@ -19,6 +19,7 @@ from splitter import (
 )
 
 UPLOAD_DIR = Path(".work/uploads")
+DEFAULT_CLOUD_OUTPUT_DIR = ".work/output"
 SEGMENT_OPTIONS = (10, 20, 30)
 OUTPUT_FORMAT_OPTIONS = (
     (OUTPUT_FORMAT_ORIGINAL, "Pertahankan format asal"),
@@ -30,7 +31,22 @@ SUPPORTED_AUDIO_LABEL = ", ".join(f".{extension}" for extension in SUPPORTED_AUD
 
 def init_session_state() -> None:
     if "output_dir" not in st.session_state:
-        st.session_state.output_dir = ""
+        st.session_state.output_dir = (
+            DEFAULT_CLOUD_OUTPUT_DIR if not folder_picker_available() else ""
+        )
+
+
+def uses_cloud_output_selection() -> bool:
+    return not folder_picker_available()
+
+
+def resolve_output_dir() -> Path:
+    output_dir = st.session_state.output_dir.strip()
+    if output_dir:
+        return Path(output_dir)
+    if uses_cloud_output_selection():
+        return Path(DEFAULT_CLOUD_OUTPUT_DIR)
+    raise SplitterError("Pilih folder output terlebih dahulu.")
 
 
 def save_uploaded_file(uploaded_file) -> Path:
@@ -45,9 +61,15 @@ def main() -> None:
     init_session_state()
 
     st.title("Pemotong Audio")
-    st.caption(
-        "File diproses sepenuhnya di komputer Anda. Tidak ada unggahan ke layanan eksternal."
-    )
+    if uses_cloud_output_selection():
+        st.caption(
+            "Aplikasi berjalan di server Streamlit. File diproses di server dan hasil "
+            "disimpan ke path folder output yang Anda isi."
+        )
+    else:
+        st.caption(
+            "File diproses sepenuhnya di komputer Anda. Tidak ada unggahan ke layanan eksternal."
+        )
 
     if not ffmpeg_available():
         st.error(
@@ -55,10 +77,6 @@ def main() -> None:
             "Untuk Streamlit Community Cloud, pastikan file packages.txt berisi ffmpeg "
             "lalu deploy ulang aplikasi."
         )
-        st.stop()
-
-    if not folder_picker_available():
-        st.error("Dialog folder tidak tersedia di sistem ini.")
         st.stop()
 
     uploaded_file = st.file_uploader(
@@ -79,19 +97,29 @@ def main() -> None:
     )
 
     st.subheader("Folder output")
-    if st.button("Pilih folder…", use_container_width=True):
-        try:
-            selected_directory = pick_output_directory_for_web()
-        except FolderPickerError as exc:
-            st.error(str(exc))
-        else:
-            if selected_directory:
-                st.session_state.output_dir = selected_directory
-
-    if st.session_state.output_dir:
-        st.caption(f"Folder terpilih: `{st.session_state.output_dir}`")
+    if uses_cloud_output_selection():
+        st.text_input(
+            "Path folder output di server",
+            key="output_dir",
+            placeholder=DEFAULT_CLOUD_OUTPUT_DIR,
+            help="Deploy cloud tidak mendukung dialog folder lokal. Isi path folder di server.",
+        )
+        if not st.session_state.output_dir.strip():
+            st.caption(f"Jika dikosongkan, hasil disimpan ke `{DEFAULT_CLOUD_OUTPUT_DIR}`.")
     else:
-        st.caption("Belum ada folder dipilih.")
+        if st.button("Pilih folder…", use_container_width=True):
+            try:
+                selected_directory = pick_output_directory_for_web()
+            except FolderPickerError as exc:
+                st.error(str(exc))
+            else:
+                if selected_directory:
+                    st.session_state.output_dir = selected_directory
+
+        if st.session_state.output_dir:
+            st.caption(f"Folder terpilih: `{st.session_state.output_dir}`")
+        else:
+            st.caption("Belum ada folder dipilih.")
 
     info_message = (
         "Hasil disimpan di subfolder bernama file di dalam folder output yang dipilih. "
@@ -110,16 +138,13 @@ def main() -> None:
             st.error("Unggah file audio terlebih dahulu.")
             st.stop()
 
-        if not st.session_state.output_dir:
-            st.error("Pilih folder output terlebih dahulu.")
-            st.stop()
-
         try:
             input_path = save_uploaded_file(uploaded_file)
+            output_dir = resolve_output_dir()
             with st.spinner("Memproses audio…"):
                 output_paths = split_audio(
                     input_path=input_path,
-                    output_dir=Path(st.session_state.output_dir),
+                    output_dir=output_dir,
                     segment_minutes=segment_minutes,
                     output_format=output_format,
                 )
