@@ -100,12 +100,14 @@ def render_browser_folder_save(output_paths: list[Path], output_root: Path) -> N
     if not output_paths:
         return
 
+    resolved_root = output_root.expanduser().resolve()
     files_payload = []
     for output_path in output_paths:
+        resolved_output = output_path.expanduser().resolve()
         files_payload.append(
             {
-                "relative_path": output_path.relative_to(output_root).as_posix(),
-                "data": base64.b64encode(output_path.read_bytes()).decode("ascii"),
+                "relative_path": resolved_output.relative_to(resolved_root).as_posix(),
+                "data": base64.b64encode(resolved_output.read_bytes()).decode("ascii"),
             }
         )
 
