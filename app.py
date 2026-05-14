@@ -22,7 +22,7 @@ from ui_options import (
     SUPPORTED_AUDIO_TYPES,
     segment_label,
 )
-from web_seo import configure_streamlit_page, inject_responsive_styles, render_page_intro
+from web_seo import configure_streamlit_page, inject_meta_tags, inject_responsive_styles, render_page_header
 from web_state import WebSessionState, save_uploaded_file
 from web_workflow import (
     complete_split,
@@ -48,11 +48,12 @@ def main() -> None:
     """Bangun halaman Streamlit untuk upload, pemilihan folder, dan pemotongan audio."""
     configure_streamlit_page()
     WebSessionState.init()
+    inject_meta_tags()
     inject_responsive_styles()
     cleanup_work_dirs()
 
     native_folder_picker = uses_native_folder_picker()
-    render_page_intro()
+    render_page_header()
 
     if not ffmpeg_available():
         st.error(ffmpeg_missing_message())
