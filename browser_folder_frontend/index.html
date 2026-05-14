@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  </head>
+  <body>
+    <div>
+      <button id="pick-folder" type="button">Pilih folder lokal…</button>
+      <p id="folder-status">Belum ada folder dipilih.</p>
+      <p id="save-status"></p>
+    </div>
+    <script>
+      const DB_NAME = "audio-splitter";
+      const STORE_NAME = "folder-handle";
+
+      let directoryHandle = null;
+      let lastReportedName = "";
+
+      function setStatus(message) {
+        document.getElementById("folder-status").textContent = message;
+      }
+
+      function setSaveStatus(message) {
+        document.getElementById("save-status").textContent = message;
+      }
+
+      function openDatabase() {
+        return new Promise((resolve, reject) => {
+          const request = indexedDB.open(DB_NAME, 1);
+          request.onupgradeneeded = () => {
+            request.result.createObjectStore(STORE_NAME);
+          };
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+        });
+      }
+
+      async function storeDirectoryHandle(handle) {
+        const database = await openDatabase();
+        await new Promise((resolve, reject) => {
+          const transaction = database.transaction(STORE_NAME, "readwrite");
+          transaction.oncomplete = () => resolve();
+          transaction.onerror = () => reject(transaction.error);
+          transaction.objectStore(STORE_NAME).put(handle, "output");
+        });
+      }
+
+      async function loadDirectoryHandle() {
+        const database = await openDatabase();
+        return new Promise((resolve, reject) => {
+          const transaction = database.transaction(STORE_NAME, "readonly");
+          transaction.onerror = () => reject(transaction.error);
+          const request = transaction.objectStore(STORE_NAME).get("output");
+          request.onsuccess = () => resolve(request.result || null);
+          request.onerror = () => reject(request.error);
+        });
+      }
+
+      async function restoreDirectoryHandle() {
+        if (directoryHandle) {
+          return directoryHandle;
+        }
+
+        try {
+          const storedHandle = await loadDirectoryHandle();
+          if (!storedHandle) {
+            return null;
+          }
+
+          const permission = await storedHandle.queryPermission({ mode: "readwrite" });
+          if (permission !== "granted") {
+            const requested = await storedHandle.requestPermission({ mode: "readwrite" });
+            if (requested !== "granted") {
+              return null;
+            }
+          }
+
+          directoryHandle = storedHandle;
+          setStatus(`Folder terpilih: ${directoryHandle.name}`);
+          return directoryHandle;
+        } catch (error) {
+          return null;
+        }
+      }
+
+      function reportSelection(force) {
+        if (!directoryHandle) {
+          return;
+        }
+
+        const payload = {
+          name: directoryHandle.name,
+          selected: true,
+          saved: 0,
+          error: null,
+        };
+        if (force || directoryHandle.name !== lastReportedName) {
+          lastReportedName = directoryHandle.name;
+          Streamlit.setComponentValue(payload);
+        }
+      }
+
+      async function ensureWritePermission() {
+        if (!directoryHandle) {
+          return false;
+        }
+
+        const permission = await directoryHandle.queryPermission({ mode: "readwrite" });
+        if (permission === "granted") {
+          return true;
+        }
+
+        const requested = await directoryHandle.requestPermission({ mode: "readwrite" });
+        return requested === "granted";
+      }
+
+      async function saveFiles(files) {
+        if (!(await restoreDirectoryHandle())) {
+          Streamlit.setComponentValue({
+            name: "",
+            selected: false,
+            saved: 0,
+            error: "Pilih folder output lokal terlebih dahulu.",
+          });
+          return;
+        }
+
+        if (!(await ensureWritePermission())) {
+          Streamlit.setComponentValue({
+            name: directoryHandle.name,
+            selected: true,
+            saved: 0,
+            error: "Izin menulis ke folder belum diberikan.",
+          });
+          return;
+        }
+
+        try {
+          for (const file of files) {
+            const parts = file.relative_path.split("/");
+            const fileName = parts.pop();
+            let targetDirectory = directoryHandle;
+            for (const part of parts) {
+              targetDirectory = await targetDirectory.getDirectoryHandle(part, { create: true });
+            }
+            const fileHandle = await targetDirectory.getFileHandle(fileName, { create: true });
+            const writable = await fileHandle.createWritable();
+            const binary = Uint8Array.from(atob(file.data), (char) => char.charCodeAt(0));
+            await writable.write(binary);
+            await writable.close();
+          }
+
+          setSaveStatus(`Berhasil menyimpan ${files.length} file.`);
+          Streamlit.setComponentValue({
+            name: directoryHandle.name,
+            selected: true,
+            saved: files.length,
+            error: null,
+          });
+        } catch (error) {
+          Streamlit.setComponentValue({
+            name: directoryHandle.name,
+            selected: true,
+            saved: 0,
+            error: "Gagal menyimpan file ke folder lokal.",
+          });
+        }
+      }
+
+      async function onRender(event) {
+        const files = JSON.parse(event.detail.args.files_json || "[]");
+        if (files.length > 0) {
+          await saveFiles(files);
+        } else {
+          await restoreDirectoryHandle();
+          if (directoryHandle) {
+            reportSelection(true);
+          }
+        }
+
+        Streamlit.setFrameHeight(document.body.scrollHeight + 16);
+      }
+
+      document.getElementById("pick-folder").addEventListener("click", async () => {
+        if (!window.showDirectoryPicker) {
+          setStatus("Browser ini tidak mendukung pemilihan folder lokal.");
+          return;
+        }
+
+        try {
+          directoryHandle = await window.showDirectoryPicker();
+          await storeDirectoryHandle(directoryHandle);
+          setStatus(`Folder terpilih: ${directoryHandle.name}`);
+          setSaveStatus("");
+          reportSelection(true);
+        } catch (error) {
+          setStatus("Folder tidak dipilih.");
+        }
+      });
+
+      const Streamlit = (() => {
+        const API_VERSION = 1;
+        const RENDER_EVENT = "streamlit:render";
+        const events = new EventTarget();
+        let registeredMessageListener = false;
+        let lastFrameHeight = 0;
+
+        function sendBackMsg(type, data) {
+          window.parent.postMessage({ isStreamlitMessage: true, type, ...data }, "*");
+        }
+
+        function setComponentReady() {
+          if (!registeredMessageListener) {
+            window.addEventListener("message", onMessageEvent);
+            registeredMessageListener = true;
+          }
+          sendBackMsg("streamlit:componentReady", { apiVersion: API_VERSION });
+        }
+
+        function setFrameHeight(height) {
+          if (height === undefined) {
+            height = document.body.scrollHeight;
+          }
+          if (height === lastFrameHeight) {
+            return;
+          }
+          lastFrameHeight = height;
+          sendBackMsg("streamlit:setFrameHeight", { height });
+        }
+
+        function setComponentValue(value) {
+          sendBackMsg("streamlit:setComponentValue", {
+            value,
+            dataType: "json",
+          });
+        }
+
+        function onMessageEvent(event) {
+          const type = event.data && event.data.type;
+          if (type === RENDER_EVENT) {
+            const args = event.data.args || {};
+            const detail = {
+              disabled: Boolean(event.data.disabled),
+              args,
+              theme: event.data.theme,
+            };
+            events.dispatchEvent(new CustomEvent(RENDER_EVENT, { detail }));
+          }
+        }
+
+        return { API_VERSION, RENDER_EVENT, events, setComponentReady, setFrameHeight, setComponentValue };
+      })();
+
+      Streamlit.events.addEventListener(Streamlit.RENDER_EVENT, onRender);
+      Streamlit.setComponentReady();
+      Streamlit.setFrameHeight(120);
+    </script>
+  </body>
+</html>

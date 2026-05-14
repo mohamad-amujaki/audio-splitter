@@ -4,7 +4,7 @@ from pathlib import Path
 
 import streamlit as st
 
-from browser_folder import render_browser_folder_picker, render_browser_folder_save
+from browser_folder import build_browser_files_payload, render_browser_folder_manager
 from folder_picker import FolderPickerError, folder_picker_available, pick_output_directory_for_web
 from splitter import (
     OUTPUT_FORMAT_MP3,
@@ -31,16 +31,8 @@ def init_session_state() -> None:
         st.session_state.output_dir = ""
     if "browser_output_folder" not in st.session_state:
         st.session_state.browser_output_folder = ""
-
-
-def sync_browser_folder_selection() -> None:
-    selected_folder = st.query_params.get("selected_folder")
-    if not selected_folder:
-        return
-
-    st.session_state.browser_output_folder = selected_folder
-    if "selected_folder" in st.query_params:
-        del st.query_params["selected_folder"]
+    if "pending_browser_files" not in st.session_state:
+        st.session_state.pending_browser_files = []
 
 
 def uses_native_folder_picker() -> bool:
@@ -61,10 +53,57 @@ def save_uploaded_file(uploaded_file) -> Path:
     return destination
 
 
+def sync_browser_folder_state(component_result: dict | None) -> None:
+    if not component_result:
+        return
+
+    folder_name = component_result.get("name")
+    if component_result.get("selected") and folder_name:
+        st.session_state.browser_output_folder = folder_name
+
+
+def handle_browser_save_result(component_result: dict | None) -> None:
+    if not component_result:
+        return
+
+    if component_result.get("error"):
+        st.error(str(component_result["error"]))
+        return
+
+    saved_count = int(component_result.get("saved") or 0)
+    if saved_count <= 0:
+        return
+
+    folder_name = st.session_state.browser_output_folder
+    st.session_state.pending_browser_files = []
+    if folder_name:
+        st.success(
+            f"Selesai. {saved_count} file disimpan ke folder lokal `{folder_name}`."
+        )
+    else:
+        st.success(
+            f"Selesai. {saved_count} file disimpan ke folder lokal yang dipilih."
+        )
+
+
+def render_browser_folder_section() -> None:
+    component_result = render_browser_folder_manager(
+        st.session_state.pending_browser_files,
+        key="browser_folder_manager",
+    )
+    sync_browser_folder_state(component_result)
+    handle_browser_save_result(component_result)
+
+    if st.session_state.browser_output_folder:
+        st.caption(f"Folder lokal terpilih: `{st.session_state.browser_output_folder}`")
+        st.caption("Browser hanya menampilkan nama folder, bukan path lengkap.")
+    else:
+        st.caption("Belum ada folder dipilih.")
+
+
 def main() -> None:
     st.set_page_config(page_title="Pemotong Audio", page_icon="🎧", layout="centered")
     init_session_state()
-    sync_browser_folder_selection()
 
     st.title("Pemotong Audio")
     st.caption(
@@ -116,12 +155,7 @@ def main() -> None:
             "Gunakan tombol di bawah untuk memilih folder lokal di komputer Anda. "
             "Fitur ini membutuhkan browser berbasis Chromium."
         )
-        render_browser_folder_picker()
-        if st.session_state.browser_output_folder:
-            st.caption(f"Folder lokal terpilih: `{st.session_state.browser_output_folder}`")
-            st.caption("Browser hanya menampilkan nama folder, bukan path lengkap.")
-        else:
-            st.caption("Belum ada folder dipilih.")
+        render_browser_folder_section()
 
     info_message = (
         "Hasil disimpan di subfolder bernama file di dalam folder output yang dipilih. "
@@ -140,12 +174,17 @@ def main() -> None:
             st.error("Unggah file audio terlebih dahulu.")
             st.stop()
 
+        if uses_native_folder_picker():
+            if not st.session_state.output_dir.strip():
+                st.error("Pilih folder output di komputer Anda terlebih dahulu.")
+                st.stop()
+        elif not st.session_state.browser_output_folder:
+            st.error("Pilih folder output lokal terlebih dahulu.")
+            st.stop()
+
         try:
             input_path = save_uploaded_file(uploaded_file)
-            if uses_native_folder_picker():
-                output_dir = resolve_output_dir()
-            else:
-                output_dir = TEMP_OUTPUT_DIR
+            output_dir = resolve_output_dir() if uses_native_folder_picker() else TEMP_OUTPUT_DIR
 
             with st.spinner("Memproses audio…"):
                 output_paths = split_audio(
@@ -162,18 +201,11 @@ def main() -> None:
                     f"Selesai. {len(output_paths)} file disimpan di folder lokal yang dipilih."
                 )
             else:
-                render_browser_folder_save(output_paths, TEMP_OUTPUT_DIR)
-                folder_name = st.session_state.browser_output_folder
-                if folder_name:
-                    message = (
-                        f"Selesai. {len(output_paths)} file disimpan ke folder lokal "
-                        f"`{folder_name}`."
-                    )
-                else:
-                    message = (
-                        f"Selesai. {len(output_paths)} file disimpan ke folder lokal yang dipilih."
-                    )
-                st.success(message)
+                st.session_state.pending_browser_files = build_browser_files_payload(
+                    output_paths,
+                    TEMP_OUTPUT_DIR,
+                )
+                st.rerun()
 
 
 if __name__ == "__main__":
